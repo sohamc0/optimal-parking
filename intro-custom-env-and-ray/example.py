@@ -102,7 +102,7 @@ from gymnasium import spaces
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, size=5):
+    def __init__(self, render_mode=None, size=7):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
 
@@ -110,8 +110,10 @@ class GridWorldEnv(gym.Env):
         # Each location is encoded as an element of {0, ..., `size`}^2, i.e. MultiDiscrete([size, size]).
         self.observation_space = spaces.Dict(
             {
+                # orientation is 0 for left wall, 1 for top wall, and so on...
+                "orientation": spaces.Discrete(4),
                 "agent": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "target": spaces.Box(0, size - 1, shape=(2,), dtype=int),
+                "main target": spaces.Box(0, size - 1, shape=(2,), dtype=int),     
             }
         )
 
@@ -154,7 +156,7 @@ class GridWorldEnv(gym.Env):
 # ``reset`` and ``step`` separately:
 
     def _get_obs(self):
-        return {"agent": self._agent_location, "target": self._target_location}
+        return {"agent": self._agent_location, "target": self._target_location, "orientation": self._orientation}
 
 # %%
 # We can also implement a similar method for the auxiliary information
@@ -201,6 +203,23 @@ class GridWorldEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
+        # choose the parking spot's adjacent wall randomly
+        self._orientation = self.np_random.integers(0, 4, dtype=int)
+        self._obstacles = set()
+
+        if self._orientation == 0 or self._orientation == 2:
+            if self._orientation == 0: #left side
+                self._target_location = np.ndarray((2,), buffer=np.array([0, self.np_random.integers(1, self.size - 1, dtype=int)]), dtype=int)
+                
+            else: #right side
+                self._target_location = np.ndarray((2,), buffer=np.array([self.size - 1,int(self.size/2)]), dtype=int)
+        else:
+            if self._orientation == 1: #top side
+                self._target_location = np.ndarray((2,), buffer=np.array([0,int(self.size/2)]), dtype=int)
+            else: #bottom side
+                self._target_location = np.ndarray((2,), buffer=np.array([self.size - 1,int(self.size/2)]), dtype=int)
+
+        
         # Choose the agent's location uniformly at random
         self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
 
