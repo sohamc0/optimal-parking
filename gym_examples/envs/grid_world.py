@@ -98,6 +98,8 @@ import pygame
 import gymnasium as gym
 from gymnasium import spaces
 
+import ray
+from ray.rllib.algorithms import ppo
 
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -290,7 +292,7 @@ class GridWorldEnv(gym.Env):
 
         if hit_target:
             reward = 100
-        else if hit_obstacle:
+        elif hit_obstacle:
             reward = -100
         else:
             reward = -1
@@ -570,3 +572,10 @@ class GridWorldEnv(gym.Env):
 #    env = gymnasium.make('gym_examples/GridWorld-v0')
 #    wrapped_env = RelativePosition(env)
 #    print(wrapped_env.reset())     # E.g.  [-3  3], {}
+ray.init()
+algo = ppo.PPO(env=GridWorldEnv, config={
+    "env_config": {},  # config to pass to env class
+})
+
+while True:
+    print(algo.train())
