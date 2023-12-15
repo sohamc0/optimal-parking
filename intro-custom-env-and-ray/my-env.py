@@ -156,7 +156,7 @@ class GridWorldEnv(gym.Env):
 # ``reset`` and ``step`` separately:
 
     def _get_obs(self):
-        return {"agent": self._agent_location, "target": self._target_location, "orientation": self._orientation}
+        return {"agent": self._agent_location, "target": self._target_location, "obstacles": self._obstacles}
 
 # %%
 # We can also implement a similar method for the auxiliary information
@@ -205,30 +205,47 @@ class GridWorldEnv(gym.Env):
 
         # choose the parking spot's adjacent wall randomly
         self._orientation = self.np_random.integers(0, 4, dtype=int)
-        self._obstacles = set()
+        self._obstacles = []
 
         if self._orientation == 0 or self._orientation == 2:
             if self._orientation == 0: #left side
-                self._target_location = np.ndarray((2,), buffer=np.array([0, self.np_random.integers(1, self.size - 1, dtype=int)]), dtype=int)
-                
+                self._target_location = np.array([0, self.np_random.integers(1, self.size - 1, dtype=int)])
+                for i in range(floor(size/2)):
+                    self._obstacles.append(np.add(self._target_location, np.array([i, 1])))
+                    self._obstacles.append(np.add(self._target_location, np.array([i, -1])))
             else: #right side
-                self._target_location = np.ndarray((2,), buffer=np.array([self.size - 1,int(self.size/2)]), dtype=int)
+                self._target_location = np.array([size - 1, self.np_random.integers(1, self.size - 1, dtype=int)])
+                for i in range(floor(size/2)):
+                    self._obstacles.append(np.add(self._target_location, np.array([-i, 1])))
+                    self._obstacles.append(np.add(self._target_location, np.array([-i, -1])))
         else:
             if self._orientation == 1: #top side
-                self._target_location = np.ndarray((2,), buffer=np.array([0,int(self.size/2)]), dtype=int)
+                self._target_location = np.array([self.np_random.integers(1, self.size - 1, dtype=int), self.size - 1])
+                for i in range(floor(size/2)):
+                    self._obstacles.append(np.add(self._target_location, np.array([1, -i])))
+                    self._obstacles.append(np.add(self._target_location, np.array([-1, -i])))
             else: #bottom side
-                self._target_location = np.ndarray((2,), buffer=np.array([self.size - 1,int(self.size/2)]), dtype=int)
+                self._target_location = np.array([self.np_random.integers(1, self.size - 1, dtype=int), 0])
+                for i in range(floor(size/2)):
+                    self._obstacles.append(np.add(self._target_location, np.array([1, i])))
+                    self._obstacles.append(np.add(self._target_location, np.array([-1, i])))
 
         
         # Choose the agent's location uniformly at random
-        self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+        agent_ok = False
+        while not agent_ok:
+            self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+            agent_ok = True
+            if not np.array_equal(self._agent_location, self._target_location):
+                for el in self._obstacles:
+                    if np.array_equal(self._agent_location, el):
+                        agent_ok = False
+                        break
+            else:
+                agent_ok = False
 
-        # We will sample the target's location randomly until it does not coincide with the agent's location
-        self._target_location = self._agent_location
-        while np.array_equal(self._target_location, self._agent_location):
-            self._target_location = self.np_random.integers(
-                0, self.size, size=2, dtype=int
-            )
+        # now the agent should be in a valid starting position
+
 
         observation = self._get_obs()
         info = self._get_info()
@@ -260,9 +277,24 @@ class GridWorldEnv(gym.Env):
         self._agent_location = np.clip(
             self._agent_location + direction, 0, self.size - 1
         )
-        # An episode is done iff the agent has reached the target
-        terminated = np.array_equal(self._agent_location, self._target_location)
-        reward = 1 if terminated else -1  # Binary sparse rewards
+        # An episode is done iff the agent has reached the target or hit an obstacle
+        hit_target = np.array_equal(self._agent_location, self._target_location)
+        
+        hit_obstacle = False
+        for el in self._obstacles:
+            if np.array_equal(self._agent_location, el):
+                hit_obstacle = True
+                break
+        
+        terminated = True if (hit_target or hit_obstacle) else False
+
+        if hit_target:
+            reward = 100
+        else if hit_obstacle:
+            reward = -100
+        else:
+            reward = -1
+
         observation = self._get_obs()
         info = self._get_info()
 
@@ -308,6 +340,16 @@ class GridWorldEnv(gym.Env):
                 (pix_square_size, pix_square_size),
             ),
         )
+        # Then, we draw the obstacles
+        for el in self._obstacles:
+            pygame.draw.rect(
+                canvas,
+                (0, 255, 0),
+                pygame.Rect(
+                    pix_square_size * el,
+                    (pix_square_size, pix_square_size),
+                ),
+            )
         # Now we draw the agent
         pygame.draw.circle(
             canvas,
