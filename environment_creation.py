@@ -94,14 +94,13 @@ Let us look at the source code of ``GridWorldEnv`` piece by piece:
 
 import numpy as np
 import pygame
+import math
+import random
 
 import gymnasium as gym
 from gymnasium import spaces
 
-import ray
-from ray.rllib.algorithms import ppo
-
-class GridWorldEnv(gym.Env):
+class ParkingLotEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
     def __init__(self, render_mode=None, size=7):
@@ -113,9 +112,9 @@ class GridWorldEnv(gym.Env):
         self.observation_space = spaces.Dict(
             {
                 # orientation is 0 for left wall, 1 for top wall, and so on...
-                "orientation": spaces.Discrete(4),
                 "agent": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "main target": spaces.Box(0, size - 1, shape=(2,), dtype=int),     
+                "target": spaces.Box(0, size - 1, shape=(2,), dtype=int), 
+                "obstacles": spaces.Sequence(spaces.Box(0, size - 1, shape=(2,), dtype=int)),
             }
         )
 
@@ -134,7 +133,7 @@ class GridWorldEnv(gym.Env):
             3: np.array([0, -1]),
         }
 
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        #assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
         """
@@ -206,33 +205,32 @@ class GridWorldEnv(gym.Env):
         super().reset(seed=seed)
 
         # choose the parking spot's adjacent wall randomly
-        self._orientation = self.np_random.integers(0, 4, dtype=int)
-        self._obstacles = []
+        self._orientation = random.randint(0, 3)
+        self._obstacles = ()
 
         if self._orientation == 0 or self._orientation == 2:
             if self._orientation == 0: #left side
-                self._target_location = np.array([0, self.np_random.integers(1, self.size - 1, dtype=int)])
-                for i in range(floor(size/2)):
-                    self._obstacles.append(np.add(self._target_location, np.array([i, 1])))
-                    self._obstacles.append(np.add(self._target_location, np.array([i, -1])))
+                self._target_location = np.ndarray(shape = (2,), buffer = np.array([0, self.np_random.integers(1, self.size - 1, dtype=int)]), dtype = int)
+                for i in range(math.floor(self.size/2)):
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([i, 1]), dtype = int)), )
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([i, -1]), dtype = int)), )
             else: #right side
-                self._target_location = np.array([size - 1, self.np_random.integers(1, self.size - 1, dtype=int)])
-                for i in range(floor(size/2)):
-                    self._obstacles.append(np.add(self._target_location, np.array([-i, 1])))
-                    self._obstacles.append(np.add(self._target_location, np.array([-i, -1])))
+                self._target_location = np.ndarray(shape = (2,), buffer = np.array([self.size - 1, self.np_random.integers(1, self.size - 1, dtype=int)]), dtype = int)
+                for i in range(math.floor(self.size/2)):
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([-i, 1]), dtype = int)), )
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([-i, -1]), dtype = int)), )
         else:
             if self._orientation == 1: #top side
-                self._target_location = np.array([self.np_random.integers(1, self.size - 1, dtype=int), self.size - 1])
-                for i in range(floor(size/2)):
-                    self._obstacles.append(np.add(self._target_location, np.array([1, -i])))
-                    self._obstacles.append(np.add(self._target_location, np.array([-1, -i])))
+                self._target_location = np.ndarray(shape = (2,), buffer = np.array([self.np_random.integers(1, self.size - 1, dtype=int), self.size - 1]), dtype = int)
+                for i in range(math.floor(self.size/2)):
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([1, -i]), dtype = int)), )
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([-1, -i]), dtype = int)), )
             else: #bottom side
-                self._target_location = np.array([self.np_random.integers(1, self.size - 1, dtype=int), 0])
-                for i in range(floor(size/2)):
-                    self._obstacles.append(np.add(self._target_location, np.array([1, i])))
-                    self._obstacles.append(np.add(self._target_location, np.array([-1, i])))
+                self._target_location = np.ndarray(shape = (2,), buffer = np.array([self.np_random.integers(1, self.size - 1, dtype=int), 0]), dtype = int)
+                for i in range(math.floor(self.size/2)):
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([1, i]), dtype = int)), )
+                    self._obstacles += (np.add(self._target_location, np.ndarray((2,), buffer = np.array([-1, i]), dtype = int)), )
 
-        
         # Choose the agent's location uniformly at random
         agent_ok = False
         while not agent_ok:
@@ -288,14 +286,14 @@ class GridWorldEnv(gym.Env):
                 hit_obstacle = True
                 break
         
-        terminated = True if (hit_target or hit_obstacle) else False
+        terminated = True if hit_target or hit_obstacle else False
 
         if hit_target:
-            reward = 100
+            reward = 10
         elif hit_obstacle:
-            reward = -100
-        else:
             reward = -1
+        else:
+            reward = 0
 
         observation = self._get_obs()
         info = self._get_info()
@@ -572,10 +570,3 @@ class GridWorldEnv(gym.Env):
 #    env = gymnasium.make('gym_examples/GridWorld-v0')
 #    wrapped_env = RelativePosition(env)
 #    print(wrapped_env.reset())     # E.g.  [-3  3], {}
-ray.init()
-algo = ppo.PPO(env=GridWorldEnv, config={
-    "env_config": {},  # config to pass to env class
-})
-
-while True:
-    print(algo.train())
