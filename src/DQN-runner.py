@@ -5,7 +5,6 @@ from ray.rllib.algorithms import dqn
 
 def env_creator(env_config):
 	return ParkingLotEnv()
-	#return ParkingLotEnv(render_mode='human')
 
 register_env("MyGrid", env_creator)
 
@@ -22,19 +21,21 @@ replay_config = {
 
 
 config = config.training(replay_buffer_config=replay_config)
-config = config.rollouts(num_rollout_workers=2)
+config = config.rollouts(num_rollout_workers=1)
 config = config.resources(num_gpus=0)
 config = config.env_runners(num_env_runners=1)
 config = config.environment("MyGrid")
 
 algo = dqn.DQN(config=config)
 
-for _ in range(10):
+for _ in range(30):
 	algo.train()
 
+'''
 save_result = algo.save()
 path_to_checkpoint = save_result.checkpoint.path
 print(
     "An Algorithm checkpoint has been created inside directory: "
     f"'{path_to_checkpoint}'."
 )
+'''

@@ -99,7 +99,7 @@ import random
 import sys
 
 import gymnasium as gym
-from gymnasium import spaces
+from gymnasium.spaces import Dict, Box, Discrete
 
 class ParkingLotEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -108,10 +108,8 @@ class ParkingLotEnv(gym.Env):
         self.height = 18
         self.width = 7
         self.size = self.height
-        size = self.size
         self.window_size = 512  # The size of the PyGame window
 
-        self._store_entr = np.array([3, 17])
         self._possible_spots = [[1,2], [1,5], [1,8], [1,11], [1,14],
                                 [5,2], [5,5], [5,8], [5,11], [5,14]]
 
@@ -143,35 +141,18 @@ class ParkingLotEnv(gym.Env):
 
         # Observations are dictionaries with the agent's and the target's location.
         # Each location is encoded as an element of {0, ..., `size`}^2, i.e. MultiDiscrete([size, size]).
-        self.observation_space = spaces.Dict(
+        self.observation_space = Dict(
             {
                 # orientation is 0 for left wall, 1 for top wall, and so on...
-                "agent": spaces.Box(low=np.array([0, 0]), high=np.array([6, 17]), shape=(2,), dtype=int),
-                "store_entrance": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "targets": spaces.Dict(
-                    {
-                        "target_1": spaces.Box(0, size - 1, shape=(2,), dtype=int), 
-                        "target_2": spaces.Box(0, size - 1, shape=(2,), dtype=int), 
-                        "target_3": spaces.Box(0, size - 1, shape=(2,), dtype=int)
-                    }
-                ),
-                "lines": spaces.Box(0, size - 1, shape=(50, 2), dtype=int),
-                "parked_cars": spaces.Dict(
-                    {
-                        "car_1": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                        "car_2": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                        "car_3": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                        "car_4": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                        "car_5": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                        "car_6": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                        "car_7": spaces.Box(0, size - 1, shape=(2,), dtype=int)
-                    }
-                )
+                "agent": Box(low=0, high=max(self.width - 1, self.height - 1), shape=(2,), dtype=int),
+                "store_entrance": Box(low=0, high=max(self.width - 1, self.height - 1), shape=(2,), dtype=int),
+                "targets": Box(low=0, high=max(self.width - 1, self.height - 1), shape=(3,2), dtype=int),
+                "parked_cars": Box(low=0, high=max(self.width - 1, self.height - 1), shape=(7,2), dtype=int)
             }
         )
 
         # We have 4 actions, corresponding to "right", "up", "left", "down"
-        self.action_space = spaces.Discrete(4)
+        self.action_space = Discrete(4)
 
         """
         The following dictionary maps abstract actions from `self.action_space` to
@@ -209,12 +190,12 @@ class ParkingLotEnv(gym.Env):
 # ``reset`` and ``step`` separately:
 
     def _get_obs(self):
-        return {"agent": self._agent_location, 
+        return {
+            "agent": self._agent_location, 
             "store_entrance": self._store_entr,
             "targets": self._target_location, 
-            "lines": self._lines,
-            "parked_cars": self._parked_cars_location,
-            }
+            "parked_cars": self._parked_cars_location
+        }
 
 # %%
 # We can also implement a similar method for the auxiliary information
@@ -257,35 +238,26 @@ class ParkingLotEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
         self._agent_location = np.array([3,0])
+        self._store_entr = np.array([np.random.randint(self.width), self.height - 1])
 
+        # choosing which spots are free and occupied
         chosen_targets = random.sample(self._possible_spots, 3)
         chosen_parked = []
         for element in self._possible_spots:
             if element not in chosen_targets:
                 chosen_parked.append(element)
 
+        # sorting the empty spots from closest to furthest from entrance
         chosen_targets_tuples = []
         for i in chosen_targets:
-            chosen_targets_tuples.append((i, [3, 17]))
+            chosen_targets_tuples.append((i, self._store_entr))
         chosen_targets_tuples.sort(key=lambda t: abs(t[0][0] - t[1][0]) + abs(t[0][1] - t[1][1]))
-        self._target_location = {
-            "target_1": np.array(chosen_targets_tuples[0][0]),
-            "target_2": np.array(chosen_targets_tuples[1][0]),
-            "target_3": np.array(chosen_targets_tuples[2][0])
-        }
+        self._target_location = []
+        for i in chosen_targets_tuples:
+            self._target_location.append(i[0])
+        self._target_location = np.array(self._target_location)
 
-        self._parked_cars_location = {
-            "car_1": np.array(chosen_parked[0]),
-            "car_2": np.array(chosen_parked[1]),
-            "car_3": np.array(chosen_parked[2]),
-            "car_4": np.array(chosen_parked[3]),
-            "car_5": np.array(chosen_parked[4]),
-            "car_6": np.array(chosen_parked[5]),
-            "car_7": np.array(chosen_parked[6]),
-        }
-
-
-        # now the agent should be in a valid starting position
+        self._parked_cars_location = np.array(chosen_parked)
 
 
         observation = self._get_obs()
@@ -316,30 +288,23 @@ class ParkingLotEnv(gym.Env):
         direction = self._action_to_direction[action]
         # We use `np.clip` to make sure we don't leave the grid
         self._agent_location = np.clip(
-            self._agent_location + direction, np.array([0,0]), np.array([6,17])
+            self._agent_location + direction, np.array([0,0]), np.array([self.width - 1, self.height - 1])
         )
 
-        reward = -1
+        reward = 1
         terminated = False
         # An episode is done iff the agent has reached the target or hit a parked car
-        if np.array_equal(self._agent_location, self._target_location["target_1"]):
-            reward = 100
-            terminated = True
-        elif np.array_equal(self._agent_location, self._target_location["target_2"]):
-            reward = 30
-            terminated = True
-        elif np.array_equal(self._agent_location, self._target_location["target_3"]):
-            reward = 30
-            terminated = True
-        else:
-            hit_car = False
-            for i in self._parked_cars_location:
-                if np.array_equal(self._agent_location, self._parked_cars_location[i]):
-                    reward = -100
-                    hit_car = True
+        target_rewards = [100, 50, 30]
+        for i in range(len(self._target_location)):
+            if np.array_equal(self._agent_location, self._target_location[i]):
+                reward = target_rewards[i]
+                terminated = True
+                break
+        if not terminated:
+            if any(np.array_equal(self._agent_location, ele) for ele in self._parked_cars_location):
+                    reward = -30
                     terminated = True
-                    break
-            if not hit_car:
+            else:
                 for i in self._lines:
                     if np.array_equal(self._agent_location, i):
                         reward = -5
